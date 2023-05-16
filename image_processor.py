@@ -3,47 +3,50 @@ import numpy as np
 
 threshold = 100
 
-video = cv2.VideoCapture('DashCam/DashCam2.mp4')
+video = cv2.VideoCapture('DashCam/DashCam1.mp4')
 chk, img= video.read()
 sampler = 5
 
 params = cv2.SimpleBlobDetector_Params()
 
 params.filterByArea = 1
-params.minArea = 15
-params.maxArea = 1000
-params.minDistBetweenBlobs = 1
+params.minArea = 5
+params.maxArea = 100
+params.minDistBetweenBlobs = 15
 
 
 params.filterByColor = 1
 params.blobColor = 255
 
 params.filterByCircularity = 1
-params.minCircularity = .7
+params.minCircularity = .8
 
 params.filterByConvexity = 1
-params.minConvexity = .05
+params.minConvexity = 0.50
 
-params.filterByInertia = 0
-params.minInertiaRatio = .10
+params.filterByInertia = 1
+params.minInertiaRatio = .05
 
 blob = cv2.SimpleBlobDetector_create(params)
 fno = 0
 
 def filterColors(image):
-    # Define thresholds for red lower & upper
-    red_l1 = np.array([0, 100, 40])
-    red_l2 = np.array([10, 150, 100])
-    red_u1 = np.array([170, 100, 40])
-    red_u2 = np.array([180, 150, 100])
+    # Define thresholds for red lower & upper ([0, 100, 40])
+    #([10, 150, 100])
+    #([170, 100, 40])
+    #([180, 150, 100])
+    red_l1 = np.array([0, 70, 25])
+    red_l2 = np.array([10, 255, 255])
+    red_u1 = np.array([170, 70, 25])
+    red_u2 = np.array([180, 255, 255])
     
     # Define thresholds for yellow lower & upper
-    yellow_l = np.array([5, 80, 80])
-    yellow_u = np.array([35, 150, 100])
+    yellow_l = np.array([10, 25, 80])
+    yellow_u = np.array([65, 255, 255])
     
     # Define thresholds for green lower & upper
-    green_l = np.array([70, 10, 45])
-    green_u = np.array([90, 100, 100])
+    green_l = np.array([65, 30, 35])
+    green_u = np.array([100, 60, 100])
 
     # Pull out pixels within threshold
     mask_red1 = cv2.inRange(image, red_l1, red_l2)
@@ -54,15 +57,22 @@ def filterColors(image):
     return mask_red, mask_yellow, mask_green
 
 def filterPixels(mask): # Erodes then dilates to help reduce single pixel noise
-    kernel = np.ones((5,5), np.uint8)
+    kernel = np.ones((1,1), np.uint8)
     mask = cv2.erode(mask, kernel)
     mask = cv2.dilate(mask, kernel)
+    # mask = cv2.erode(mask, kernel)
+    # mask = cv2.dilate(mask, kernel)
     return mask
 
 def detectDrawKeypoints(original, mask, color): # draws keypoints in corresponding colors
     keypoints = blob.detect(mask)
-    mask = cv2.drawKeypoints(mask, keypoints, np.array([]), color, cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-    original = cv2.drawKeypoints(original, keypoints, np.array([]), color, cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+    
+    for iter in range(len(keypoints)):
+        x_p = np.int(keypoints[iter].pt[0])
+        y_p = np.int(keypoints[iter].pt[1])
+        size = 2* np.int(keypoints[iter].size)
+        mask = cv2.rectangle(mask, (x_p-size,y_p-size),(x_p+size,y_p+size),color,3)
+        original = cv2.rectangle(original, (x_p-size,y_p-size),(x_p+size,y_p+size),color,3)
     return original, mask
     
 
@@ -70,11 +80,21 @@ def detectDrawKeypoints(original, mask, color): # draws keypoints in correspondi
 while chk:
     fno += 1 # Counts frame
     if fno % sampler == 0: # Only sample frames based on sampler
+        original_h , original_w, chnls = img.shape
         
-        img = cv2.normalize(img, None, 0, 100, cv2.NORM_MINMAX, dtype=-1) # Normalize image to help reduce lighting effects
-        hsv_img = cv2.GaussianBlur(img, (5,5),cv2.BORDER_DEFAULT) # Blur images
-        hsv_img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV) # Convert to HSV
-        m_red, m_ylw, m_grn = filterColors(hsv_img) # Call filterColors to get masks of red/yellow/green colors
+        cropped_img = img[0:np.int(original_h/2)+25,:]
+        
+        
+        cropped_img = cv2.normalize(cropped_img, None, 0, 100, cv2.NORM_MINMAX, dtype=-1) # Normalize image to help reduce lighting effects
+        cropped_blurred_img = cv2.GaussianBlur(cropped_img, (3,3),cv2.BORDER_DEFAULT) # Blur cropped images (3,3)
+        cropped_hsv_img = cv2.cvtColor(cropped_blurred_img, cv2.COLOR_BGR2HSV) # Convert cropped image to HSV
+        cv2.imshow('cropped image', cropped_img)
+        m_red, m_ylw, m_grn = filterColors(cropped_hsv_img)
+        
+        img = cv2.normalize(img, None, 0, 150, cv2.NORM_MINMAX, dtype=-1) # Normalize image to help reduce lighting effects
+        blur_img = cv2.GaussianBlur(img, (5,5),cv2.BORDER_DEFAULT) # Blur images
+        hsv_img = cv2.cvtColor(blur_img, cv2.COLOR_BGR2HSV) # Convert to HSV
+        # m_red, m_ylw, m_grn = filterColors(hsv_img) # Call filterColors to get masks of red/yellow/green colors
 
         m_grn = filterPixels(m_grn) # Call filterPixels per channel to help reduce noise
         m_ylw = filterPixels(m_ylw)
@@ -92,8 +112,8 @@ while chk:
         img=cv2.resize(img,dim, interpolation = cv2.INTER_AREA)
         m_grn = cv2.resize(m_grn, dim, interpolation= cv2.INTER_AREA)
         #cv2.imshow('green mask',m_grn)
-        cv2.imshow('red mask',m_red)
-        #cv2.imshow('yellow mask',m_ylw)
+        #cv2.imshow('red mask',m_red)
+        cv2.imshow('yellow mask',m_ylw)
         
         cv2.imshow('default',img)
         cv2.waitKey(0)
